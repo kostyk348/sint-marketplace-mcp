@@ -1,0 +1,15 @@
+[project]
+name = "sint-marketplace-mcp"
+version = "0.1.0"
+description = "Global mesh marketplace for OpenCode — publish/discover MCP servers, knowledge, ideas between instances over ACP fabric"
+requires-python = ">=3.10"
+dependencies = [
+    "fastmcp>=0.5.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["marketplace*"]
