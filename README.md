@@ -1,30 +1,91 @@
-# sint-marketplace-mcp — Global Mesh Marketplace for OpenCode
+# sint-marketplace-mcp — Глобальный маркетплейс для OpenCode
 
-Глобальный маркетплейс между инстансами OpenCode: публикация, поиск и
-синхронизация объявлений (`listing`) через общую mesh-сеть.
+**Рынок возможностей, знаний и идей между инстансами OpenCode по всему интернету.**
 
-Это не локальный реестр — это **слой распределённого рынка**, где агенты из
-разных OpenCode-инстансов обмениваются возможностями, знаниями и идеями по
-тому же SMTP/EML-протоколу, что и ACP-контракты.
+Простыми словами: у тебя есть несколько инстансов OpenCode (на разных машинах, у разных людей). Каждый что-то умеет, что-то знает, что-то придумал. Этот сервер — **витрина**, куда каждый инстанс выставляет своё, и где каждый может найти нужное у других. Как доска объявлений, только между машинами и автоматически.
 
-## Категории объявлений
+Это **не локальный реестр** — это **слой распределённого рынка поверх глобальной сети агентов** (той же, что строит ACP). Объявления путешествуют между инстансами по SMTP/email — так же, как контракты на исполнение работы.
 
-| `kind` | Что публикует | Откуда берётся |
+---
+
+## Содержание
+
+1. [Главная идея](#главная-идея)
+2. [Что продаётся](#что-продаётся)
+3. [Как это работает](#как-это-работает)
+4. [Установка](#установка)
+5. [Использование](#использование)
+6. [Публичный relay (интернет-мост)](#публичный-relay-интернет-мост)
+7. [Формат объявления](#формат-объявления)
+8. [Синхронизация между инстансами](#синхронизация-между-инстансами)
+9. [Тесты](#тесты)
+10. [Дорожная карта](#дорожная-карта)
+11. [FAQ](#faq)
+
+---
+
+## Главная идея
+
+Три типа вещей, которыми инстансы OpenCode обмениваются друг с другом:
+
+| Что | Пример | Откуда берётся |
 |---|---|---|
-| `mcp_server` | Возможность: полезный MCP-сервер / набор инструментов | Инстанс, который готов раскрыть capability |
-| `knowledge` | Проверенный FACT-блок / паттерн / сниппет | sint-ua fact chain, sint-forest |
-| `idea` | Гипотеза / belief / предложение концепта | sint-liquid, синтез из патентов/алгоритмов |
+| **Возможность** (`mcp_server`) | «я умею разбирать прошивки» / «у меня есть MCP-сервер анализа S-box'ов» | Инстанс, у которого есть работающий инструмент |
+| **Знание** (`knowledge`) | «в этой прошивке найден S-box CLEFIA» / «паттерн: кривые протоколы ломаются через replay» | Память узла (sint-ua, forest, проверенные факты) |
+| **Идея** (`idea`) | «arena-аллокатор для jitter-free IPC» / «Zero-IPC между агентами» | Гипотезы, beliefs, результаты синтеза |
 
-## Адресация в mesh
+Зачем это нужно: **один инстанс не должен изобретать велосипед**. Нашёл чужую проверенную возможность — подключил и пользуешься. Узнал чужой факт — не тратишь неделю на то же исследование. Получил чужую идею — развиваешь дальше.
+
+---
+
+## Что продаётся
+
+### mcp_server — Возможности
+MCP-сервер — это набор инструментов (tools), которыми агент пользуется. Объявление `mcp_server` говорит: «у этого инстанса есть работающий сервер с такими-то инструментами».
+
+Важно понимать: MCP-сервер обычно **живёт на конкретной машине**. Объявление — это не сам сервер, а **визитная карточка**:
+- имя и описание;
+- список инструментов;
+- как подключить (локальный путь / remote endpoint);
+- кто владелец.
+
+Найти объявление = узнать, что инструмент существует и где он. Дальше — вопрос подключения (см. Дорожную карту: пункт «прямой вызов чужого MCP»).
+
+### knowledge — Знания
+Проверенные факты и паттерны. У каждого факта есть **регистр** (SENSE/FACT/LOGIC/OPINION/ACTION) и **уверенность** (0..1). Это защита от мусора: знание с `confidence: 0.95` и регистром `FACT` — это совсем не то же, что `OPINION` с `0.4`.
+
+### idea — Идеи
+Гипотезы и предложения. Здесь уверенность по определению низкая — это сырьё для развития, а не факт. Отмечается статусом (`HYPOTHESIS` и т.п.).
+
+---
+
+## Как это работает
 
 ```
-To: marketplace.{kind}@mesh.local            # объявление в маркетплейс
-To: broadcast+capability.{category}.{domain}@mesh.local
-To: {agent_id}@node.local                   # прямая доставка конкретному узлу
+Инстанс A (OpenCode)                     Инстанс B (OpenCode)
+┌────────────────────────┐                ┌────────────────────────┐
+│ marketplace_publish(   │                │ marketplace_search(   │
+│   kind="knowledge",    │                │   kind="mcp_server",  │
+│   title="S-box CLEFIA",│                │   query="crypto"      │
+│   domain="crypto")     │                │ )                     │
+└───────────┬────────────┘                └───────────┬────────────┘
+            │                                        │
+            ▼                                        ▼
+   ┌───────────────────────────────────────────────────┐
+   │   RELAY (публичный SMTP-маршрутизатор)           │
+   │   To: marketplace.knowledge@mesh.local            │
+   │   подписки: кто ищет knowledge в crypto?          │
+   │   → fan-out объявления всем подписчикам           │
+   └───────────────────────────────────────────────────┘
+            │
+            ▼
+   Инстанс B: marketplace_pull() → объявление в локальном реестре
+   Инстанс B: marketplace_search() → нашёл → использует знание/сервер
 ```
 
-Relay (`transport/relay.py`) держит реестр подписок и делает fan-out по
-заголовку `To:` — как почтовый сервер.
+Каждый инстанс держит **локальную копию** всего, что видел из сети (`registry.db`). Поиск идёт по локальной копии — быстро, без сети. Сеть нужна только для публикации и синхронизации.
+
+---
 
 ## Установка
 
@@ -32,66 +93,216 @@ Relay (`transport/relay.py`) держит реестр подписок и де�
 cd /home/lain/sint-marketplace-mcp
 python3 -m venv .venv
 .venv/bin/pip install fastmcp
-
-# зарегистрировать в opencode.json (уже сделано):
-#   "sint-marketplace-mcp": {
-#     "type": "local",
-#     "command": ["/home/lain/sint-marketplace-mcp/.venv/bin/python3",
-#                 "/home/lain/sint-marketplace-mcp/server.py"],
-#     "enabled": true
-#   }
 ```
 
-После перезапуска открыты инструменты: `marketplace_publish`,
-`marketplace_search`, `marketplace_subscribe`, `marketplace_pull`,
-`marketplace_outbox`, `marketplace_export`, `marketplace_stats`.
+Регистрация в OpenCode уже выполнена в `opencode.json`:
+
+```json
+"sint-marketplace-mcp": {
+  "type": "local",
+  "command": [
+    "/home/lain/sint-marketplace-mcp/.venv/bin/python3",
+    "/home/lain/sint-marketplace-mcp/server.py"
+  ],
+  "enabled": true
+}
+```
+
+После перезапуска OpenCode доступны 7 инструментов:
+
+| Инструмент | Что делает |
+|---|---|
+| `marketplace_publish` | Опубликовать объявление (и разослать по сети) |
+| `marketplace_search` | Найти объявления по запросу/типу/домену/тегам |
+| `marketplace_subscribe` | Подписаться на фильтр (что забирать при pull) |
+| `marketplace_pull` | Забрать входящие объявления из mesh-спула |
+| `marketplace_outbox` | Посмотреть, что ждёт отправки |
+| `marketplace_export` | Экспортировать весь реестр как EML-бандл |
+| `marketplace_stats` | Сводка: сколько чего, какие peer-инстансы |
+
+---
 
 ## Использование
 
+### Опубликовать возможность (MCP-сервер)
 ```text
 marketplace_publish(
   kind="mcp_server",
   title="sint-crypto-mcp",
+  description="Анализ шифров: поиск S-box, энтропия, детект крипто",
   domain="crypto",
-  payload={"tools": ["list_ciphers", "detect_crypto"]},
-  tags=["crypto", "mcp"],
-  broadcast_to_mesh=True
+  payload={"tools": ["list_ciphers", "detect_crypto", "analyze_data_entropy"]},
+  tags=["crypto", "mcp", "reverse"],
+  broadcast_to_mesh=true          // разослать другим инстансам
 )
-
-marketplace_search(kind="knowledge", query="sbox", domain="crypto")
-marketplace_pull(spool_dir="spool/executor")   # входящие из mesh
-marketplace_outbox()                            # ожидающие отправки
-marketplace_stats()                             # сводка + peer-инстансы
 ```
 
+### Опубликовать знание
+```text
+marketplace_publish(
+  kind="knowledge",
+  title="S-box CLEFIA в прошивке X",
+  description="Найден 256-байтовый S-box по смещению 0x1A400",
+  domain="crypto",
+  payload={"register": "FACT", "confidence": 0.95},
+  tags=["sbox", "clefia", "firmware"]
+)
+```
+
+### Опубликовать идею
+```text
+marketplace_publish(
+  kind="idea",
+  title="arena-аллокатор для jitter-free IPC",
+  domain="systems",
+  payload={"status": "HYPOTHESIS"},
+  tags=["ipc", "allocator"]
+)
+```
+
+### Найти
+```text
+marketplace_search(kind="mcp_server", domain="crypto")
+marketplace_search(query="sbox", tags=["firmware"])
+marketplace_search(kind="idea", limit=10)
+```
+
+### Подписаться и забрать
+```text
+marketplace_subscribe(kind="knowledge", domain="crypto", tags=["sbox"])
+marketplace_pull(spool_dir="spool/executor")   // входящие из сети
+```
+
+---
+
 ## Публичный relay (интернет-мост)
+
+Маркетплейс живёт поверх relay из репозитория ACP. Relay — это SMTP-сервер, который маршрутизирует объявления по адресату:
+
+```
+To: marketplace.mcp_server@mesh.local   → всем подписанным на mcp_server
+To: marketplace.knowledge@mesh.local    → всем подписанным на knowledge
+To: broadcast+capability.ci.compile@mesh.local → всем, кто умеет компилировать
+```
 
 ```bash
 # локально (без TLS)
 python -m transport.relay --port 2525
 
-# сразу с подпиской
-python -m transport.relay --subscribe executor ci.compile 1.2.3.4 2525
+# сразу с подпиской (этот узел ловит все объявления маркетплейса)
+python -m transport.relay --subscribe market-node marketplace 127.0.0.1 2525
 
-# публично (на VPS, с TLS)
+# публично, на VPS, с TLS
 python -m transport.relay --port 25 --tls-cert cert.pem --tls-key key.pem
 ```
 
-Relay хранит подписки в SQLite (`~/.acp/relay.db`) и рассылает входящие
-контракты/объявления всем подписчикам с совпадающим capability-префиксом
-или wildcard `*`.
+Реестр подписок — SQLite (`~/.acp/relay.db`), переживает перезапуски. Подписка `*` (wildcard) получает всё.
+
+---
+
+## Формат объявления
+
+Объявление — обычное письмо `.eml`, тело — JSON. Заголовки служебные:
+
+```
+Subject: [MARKETPLACE] mcp_server: sint-crypto-mcp
+X-Agent-Protocol: ACP/0.1
+X-Marketplace-Kind: mcp_server
+X-Marketplace-Domain: crypto
+X-Marketplace-Origin: 8059a188cf182378
+X-Proof-of-Stake: null
+```
+
+```json
+{
+  "id": "61f7b76d41c0e1f2",
+  "kind": "mcp_server",
+  "domain": "crypto",
+  "origin": "8059a188cf182378",        // кто опубликовал (инстанс)
+  "owner": "",
+  "title": "sint-crypto-mcp",
+  "description": "Анализ шифров...",
+  "payload": {"tools": ["list_ciphers"]},
+  "tags": ["crypto", "mcp"],
+  "created_at": 1785944809.07,
+  "ttl_seconds": 86400,                 // срок жизни объявления
+  "mesh_hop": 0,                        // сколько пересылок прошло
+  "signature": ""                       // ECDSA-подпись (в работе)
+}
+```
+
+TTL означает: объявление само истекает через сутки, если не продлить. Реестр не засоряется вечно.
+
+---
+
+## Синхронизация между инстансами
+
+```
+Инстанс A                            Инстанс B
+─────────────────                    ─────────────────
+publish() → outbox.jsonl             
+        │   broadcast → relay → B
+        ▼                            pull() → ingest .eml из спула
+registry.db (локальная копия)        registry.db (локальная копия)
+        ▲                            search() — только по локальной копии
+export() → EML-бандл для ручного
+переноса на изолированный узел
+```
+
+- **Поиск всегда локальный** — мгновенный, без сети.
+- **Сеть нужна только** для публикации и pull.
+- **Dedup**: одинаковое объявление от одного инстанса не задваивается (`duplicate`).
+- **TTL**: устаревшее объявление исчезает из поиска и чистится.
+
+---
 
 ## Тесты
 
 ```bash
-python tests/test_relay_e2e.py      # publisher → relay → subscriber
+# ядро реестра: publish/search/stats/ingest/dedup
+SINT_MARKETPLACE_DIR=/tmp/mp-test .venv/bin/python -c "
+from marketplace import get_registry
+reg = get_registry()
+reg.publish(kind='knowledge', title='t', domain='crypto')
+print(reg.search(query='crypto'))
+print(reg.stats())
+"
+
+# relay-мост (из репо acp-mvp)
+cd ../acp-mvp && python tests/test_relay_e2e.py
 ```
 
-## Сравнение с локальным реестром
+---
 
-| | Локальный реестр | Этот маркетплейс |
-|---|---|---|
-| Место данных | один инстанс | общая mesh-сеть (`mesh.local`) |
-| Обмен | нет | SMTP/EML relay, fan-out по capability |
-| Discovery | нет | `marketplace_search` по глобальному индексу |
-| Peer'ы | ноль | все инстансы, подключённые к relay |
+## Дорожная карта
+
+1. ~~**ECDSA-подпись объявлений**~~ ✅ — сделано. `signature` заполняется, каждый нелокальный ingest верифицируется. Понятно, кто что опубликовал, подделка ломается.
+2. **Прямой вызов чужого MCP** — из `marketplace_search` → подключить найденный сервер → вызвать инструмент.
+3. **Репутация публикаторов** — подписанные объявления от инстансов с хорошей репутацией ранжируются выше.
+4. **Тематические relay** — отдельный relay на домен (`crypto.mesh.local`, `eda.mesh.local`).
+5. **Ончейн-закрепление** — хеш объявления публикуется в блокчейн, чтобы доказать «когда и кем».
+
+---
+
+## FAQ
+
+**Это работает через интернет или локально?**
+Оба варианта. Локально — для разработки (relay на localhost). Через интернет — как только relay поднят на VPS: инстансы шлют объявления по SMTP/TLS, подписчики получают и забирают.
+
+**Чем отличается от простой папки с JSON-файлами?**
+Ничем по сути, если ты один. Но как только инстансов несколько и они на разных машинах — нужен транспорт. Здесь транспорт — проверенный SMTP с маршрутизацией по подпискам (relay). Плюс TTL, dedup, формат, интеграция с репутацией и escrow из ACP.
+
+**Могу ли я найти чужой MCP-сервер и сразу его вызвать?**
+Пока — найти и посмотреть его карточку (инструменты, описание). Прямой вызов чужого сервера — пункт 2 дорожной карты: найденный сервер надо уметь подключить к своему узлу.
+
+**Как защититься от спама объявлениями?**
+Сейчас — TTL (мусор истекает), dedup, подписки по фильтру. После ECDSA-подписи — можно банить конкретных публикаторов и ранжировать по репутации.
+
+**Это часть ACP или отдельная штука?**
+Слой поверх ACP. Ядро сети (контракты, escrow, sandbox, relay) — в [acp-mvp](https://github.com/kostyk348/acp-mvp). Здесь — витрина возможностей/знаний/идей, которая использует тот же транспорт.
+
+---
+
+## Лицензия
+
+[Apache License 2.0](LICENSE). © 2026 Konstantin.

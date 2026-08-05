@@ -13,6 +13,7 @@ Pull flow:     registry.ingest_mesh() -> accept listings received from other ins
 """
 
 import json
+import logging
 import os
 import sqlite3
 import threading
@@ -20,6 +21,8 @@ import time
 import uuid
 import hashlib
 from pathlib import Path
+
+logger = logging.getLogger("marketplace.index")
 
 DATA_DIR = Path(os.environ.get("SINT_MARKETPLACE_DIR", Path.home() / ".config" / "opencode" / "marketplace"))
 DB_FILE = DATA_DIR / "registry.db"
@@ -50,7 +53,8 @@ class Registry:
                     created_at REAL NOT NULL,
                     ttl_seconds INTEGER NOT NULL DEFAULT 86400,
                     mesh_hop INTEGER NOT NULL DEFAULT 0,
-                    signature TEXT NOT NULL DEFAULT ''
+                    signature TEXT NOT NULL DEFAULT '',
+                    signature_valid INTEGER NOT NULL DEFAULT 0
                 )
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_listings_kind ON listings(kind)")
@@ -106,6 +110,14 @@ class Registry:
             "mesh_hop": 0,
             "signature": "",
         }
+        # Sign locally if no owner provided (normal path: this node publishes)
+        if not owner:
+            try:
+                from .sign import sign_listing, verify_listing
+                listing = sign_listing(listing)
+                listing["signature_valid"] = 1 if verify_listing(listing) else 0
+            except Exception as e:  # noqa: BLE001
+                logger.debug("signing skipped: %s", e)
         with self.lock:
             self._upsert(listing)
             self._enqueue_mesh(listing)
@@ -115,16 +127,20 @@ class Registry:
         listing = dict(listing)  # defensive copy
         defaults = {
             "owner": "", "description": "", "tags": [], "payload": {},
-            "mesh_hop": 0, "signature": "",
+            "mesh_hop": 0, "signature": "", "signature_valid": 0,
         }
         for k, v in defaults.items():
             listing.setdefault(k, v)
         with sqlite3.connect(str(self.db_path)) as conn:
+            # migrate: add signature_valid column to existing DBs
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(listings)").fetchall()]
+            if "signature_valid" not in cols:
+                conn.execute("ALTER TABLE listings ADD COLUMN signature_valid INTEGER NOT NULL DEFAULT 0")
             conn.execute(
                 """INSERT OR REPLACE INTO listings
                    (id, kind, domain, origin, owner, title, description, payload,
-                    tags, created_at, ttl_seconds, mesh_hop, signature)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    tags, created_at, ttl_seconds, mesh_hop, signature, signature_valid)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     listing["id"], listing["kind"], listing["domain"], listing["origin"],
                     listing["owner"], listing["title"], listing["description"],
@@ -132,6 +148,7 @@ class Registry:
                     json.dumps(listing.get("tags", []), ensure_ascii=False),
                     listing["created_at"], listing["ttl_seconds"],
                     listing.get("mesh_hop", 0), listing.get("signature", ""),
+                    int(listing.get("signature_valid", 0)),
                 ),
             )
             conn.commit()
@@ -176,6 +193,15 @@ class Registry:
             return "expired"
         listing.setdefault("mesh_hop", mesh_hop)
         listing["id"] = listing_id
+        # Verify signature (if present) — records provenance, does not drop unsigned (MVP)
+        listing.setdefault("signature_valid", False)
+        if listing.get("signature"):
+            try:
+                from .sign import verify_listing
+                listing["signature_valid"] = verify_listing(listing)
+            except Exception as e:  # noqa: BLE001
+                logger.debug("listings verify error: %s", e)
+                listing["signature_valid"] = False
         with self.lock:
             with sqlite3.connect(str(self.db_path)) as conn:
                 row = conn.execute("SELECT 1 FROM listings WHERE id=?", (listing_id,)).fetchone()
@@ -225,6 +251,7 @@ class Registry:
                 continue
             rec["payload"] = json.loads(rec["payload"] or "{}")
             rec["tags"] = json.loads(rec["tags"] or "[]")
+            rec["verified"] = bool(rec.get("signature_valid"))
             if tags:
                 if not set(tags) & set(rec["tags"]):
                     continue
