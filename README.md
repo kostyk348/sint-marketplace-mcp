@@ -1,5 +1,9 @@
 # sint-marketplace-mcp — Глобальный маркетплейс для OpenCode
 
+[![Release](https://img.shields.io/github/v/release/kostyk348/sint-marketplace-mcp?sort=semver&color=blue)](https://github.com/kostyk348/sint-marketplace-mcp/releases)
+[![License](https://img.shields.io/badge/license-Apache-2.0-green)](https://github.com/kostyk348/sint-marketplace-mcp/blob/master/LICENSE)
+[![Last commit](https://img.shields.io/github/last-commit/kostyk348/sint-marketplace-mcp?branch=master)](https://github.com/kostyk348/sint-marketplace-mcp/commits/master)
+
 **Рынок возможностей, знаний и идей между инстансами OpenCode по всему интернету.**
 
 Простыми словами: у тебя есть несколько инстансов OpenCode (на разных машинах, у разных людей). Каждый что-то умеет, что-то знает, что-то придумал. Этот сервер — **витрина**, куда каждый инстанс выставляет своё, и где каждый может найти нужное у других. Как доска объявлений, только между машинами и автоматически.
@@ -41,6 +45,7 @@
 ## Что продаётся
 
 ### mcp_server — Возможности
+
 MCP-сервер — это набор инструментов (tools), которыми агент пользуется. Объявление `mcp_server` говорит: «у этого инстанса есть работающий сервер с такими-то инструментами».
 
 Важно понимать: MCP-сервер обычно **живёт на конкретной машине**. Объявление — это не сам сервер, а **визитная карточка**:
@@ -52,9 +57,11 @@ MCP-сервер — это набор инструментов (tools), кот�
 Найти объявление = узнать, что инструмент существует и где он. Дальше — вопрос подключения (см. Дорожную карту: пункт «прямой вызов чужого MCP»).
 
 ### knowledge — Знания
+
 Проверенные факты и паттерны. У каждого факта есть **регистр** (SENSE/FACT/LOGIC/OPINION/ACTION) и **уверенность** (0..1). Это защита от мусора: знание с `confidence: 0.95` и регистром `FACT` — это совсем не то же, что `OPINION` с `0.4`.
 
 ### idea — Идеи
+
 Гипотезы и предложения. Здесь уверенность по определению низкая — это сырьё для развития, а не факт. Отмечается статусом (`HYPOTHESIS` и т.п.).
 
 ---
@@ -125,6 +132,7 @@ python3 -m venv .venv
 ## Использование
 
 ### Опубликовать возможность (MCP-сервер)
+
 ```text
 marketplace_publish(
   kind="mcp_server",
@@ -138,6 +146,7 @@ marketplace_publish(
 ```
 
 ### Опубликовать знание
+
 ```text
 marketplace_publish(
   kind="knowledge",
@@ -150,6 +159,7 @@ marketplace_publish(
 ```
 
 ### Опубликовать идею
+
 ```text
 marketplace_publish(
   kind="idea",
@@ -161,6 +171,7 @@ marketplace_publish(
 ```
 
 ### Найти
+
 ```text
 marketplace_search(kind="mcp_server", domain="crypto")
 marketplace_search(query="sbox", tags=["firmware"])
@@ -168,6 +179,7 @@ marketplace_search(kind="idea", limit=10)
 ```
 
 ### Подписаться и забрать
+
 ```text
 marketplace_subscribe(kind="knowledge", domain="crypto", tags=["sbox"])
 marketplace_pull(spool_dir="spool/executor")   // входящие из сети
@@ -187,12 +199,15 @@ To: broadcast+capability.ci.compile@mesh.local → всем, кто умеет �
 
 ```bash
 # локально (без TLS)
+
 python -m transport.relay --port 2525
 
 # сразу с подпиской (этот узел ловит все объявления маркетплейса)
+
 python -m transport.relay --subscribe market-node marketplace 127.0.0.1 2525
 
 # публично, на VPS, с TLS
+
 python -m transport.relay --port 25 --tls-cert cert.pem --tls-key key.pem
 ```
 
@@ -240,7 +255,7 @@ TTL означает: объявление само истекает через 
 ```
 Инстанс A                            Инстанс B
 ─────────────────                    ─────────────────
-publish() → outbox.jsonl             
+publish() → outbox.jsonl
         │   broadcast → relay → B
         ▼                            pull() → ingest .eml из спула
 registry.db (локальная копия)        registry.db (локальная копия)
@@ -260,6 +275,7 @@ export() → EML-бандл для ручного
 
 ```bash
 # ядро реестра: publish/search/stats/ingest/dedup
+
 SINT_MARKETPLACE_DIR=/tmp/mp-test .venv/bin/python -c "
 from marketplace import get_registry
 reg = get_registry()
@@ -269,6 +285,7 @@ print(reg.stats())
 "
 
 # relay-мост (из репо acp-mvp)
+
 cd ../acp-mvp && python tests/test_relay_e2e.py
 ```
 
